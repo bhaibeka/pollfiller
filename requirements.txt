@@ -1,6 +1,7 @@
 requests>=2.31
 Flask>=3.0
 
-# Optional — only needed for the Calendly / Rally browser adapters:
+# Required for Doodle group polls (and the Calendly / Rally browser adapters):
+# the Doodle SPA needs a real browser to authenticate before its API is readable.
 #   pip install playwright && playwright install chromium
-# playwright>=1.44
+playwright>=1.44

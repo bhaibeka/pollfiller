@@ -75,25 +75,34 @@ class TestPartition(unittest.TestCase):
 
 
 class TestAdapterParsingOffline(unittest.TestCase):
-    def test_doodle_option_parsing_epoch_ms(self):
+    def test_doodle_option_parsing_iso(self):
         from zeeg_poll_agent.models import Identity
         from zeeg_poll_agent.polls.doodle import DoodleAdapter
 
-        a = DoodleAdapter("https://doodle.com/poll/XYZ123", Identity("B HK", "b@uhn.ca"))
-        base = int(datetime(2026, 4, 15, 9, 0, tzinfo=UTC).timestamp() * 1000)
-        data = {
-            "title": "Lab meeting",
-            "timeZone": "America/Toronto",
-            "options": [
-                {"id": "o1", "start": base, "end": base + 30 * 60 * 1000},
-                {"id": "o2", "start": base + 3600_000, "end": base + 3600_000 + 1800_000},
-                {"id": "o3", "allday": True},  # ignored
-            ],
-        }
-        slots = a._parse_options(data)
+        a = DoodleAdapter(
+            "https://doodle.com/group-poll/participate/dBX3jpoa",
+            Identity("B HK", "b@uhn.ca"),
+        )
+        # New group-poll API: options carry ISO-8601 startAt/endAt.
+        options = [
+            {"id": "o1", "startAt": "2026-04-15T09:00:00Z", "endAt": "2026-04-15T09:30:00Z"},
+            {"id": "o2", "startAt": "2026-04-15T10:00:00Z", "endAt": "2026-04-15T10:30:00Z"},
+            {"id": "o3", "allDay": True},  # ignored
+        ]
+        slots = a._parse_options(options)
         self.assertEqual(len(slots), 2)
         self.assertEqual(slots[0].payload["optionId"], "o1")
         self.assertEqual(slots[0].start, datetime(2026, 4, 15, 9, 0, tzinfo=UTC))
+
+    def test_doodle_poll_id_from_group_poll_url(self):
+        from zeeg_poll_agent.models import Identity
+        from zeeg_poll_agent.polls.doodle import DoodleAdapter
+
+        a = DoodleAdapter(
+            "https://doodle.com/group-poll/participate/dBX3jpoa",
+            Identity("x", "y@z"),
+        )
+        self.assertEqual(a._poll_id(), "dBX3jpoa")
 
     def test_when2meet_event_id_and_slot_regex(self):
         from zeeg_poll_agent.models import Identity

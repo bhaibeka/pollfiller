@@ -8,6 +8,7 @@ from .config import Config
 from .conflicts import partition_slots
 from .models import SelectionResult
 from .polls import detect_adapter, load_builtin_adapters, supported_services
+from .urls import unwrap_url
 from .zeeg_client import ZeegClient
 
 log = logging.getLogger("zeeg_poll_agent")
@@ -31,6 +32,7 @@ class PollAgent:
         """
         from .polls.base import detect_adapter
 
+        url = unwrap_url(url)
         info: dict = {"url": url, "ok": False}
         adapter_cls = detect_adapter(url)
         info["service"] = getattr(adapter_cls, "service_name", None)
@@ -84,6 +86,7 @@ class PollAgent:
         """
         from .availability import free_and_conflicting
 
+        url = unwrap_url(url)
         adapter_cls = detect_adapter(url)
         if adapter_cls is None:
             raise ValueError(
@@ -121,6 +124,7 @@ class PollAgent:
         dry_run=True (default) computes the selection but does NOT submit, so you
         can review what the agent would do before letting it vote for real.
         """
+        url = unwrap_url(url)
         adapter_cls = detect_adapter(url)
         if adapter_cls is None:
             raise ValueError(
