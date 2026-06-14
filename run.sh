@@ -43,6 +43,19 @@ fi
 # Don't scatter __pycache__/*.pyc into the Drive folder.
 export PYTHONDONTWRITEBYTECODE=1
 
+# On macOS, open the browser once the server is up (set POLLFILLER_NO_BROWSER=1 to skip).
+if command -v open >/dev/null 2>&1 && [ "${POLLFILLER_NO_BROWSER:-}" != "1" ]; then
+  (
+    for _ in $(seq 1 90); do
+      if curl -fsS -o /dev/null "http://127.0.0.1:5000/" 2>/dev/null; then
+        open "http://127.0.0.1:5000/"
+        break
+      fi
+      sleep 1
+    done
+  ) &
+fi
+
 cd "$SCRIPT_DIR"
 echo "Starting Zeeg poll-filler at http://127.0.0.1:5000  (Ctrl-C to stop)"
 exec "$VENV/bin/python" -m zeeg_poll_agent.webapp

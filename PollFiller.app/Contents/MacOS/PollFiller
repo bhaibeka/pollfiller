@@ -1,0 +1,28 @@
+#!/bin/bash
+#
+# PollFiller.app launcher.
+#
+# This bundle lives at the root of the PollFiller project folder, so the
+# project directory is three levels up from this executable
+# (.app/Contents/MacOS/PollFiller). We open a Terminal window running the
+# project's run.sh, which builds the local environment on first launch (off
+# Google Drive) and starts the web server. run.sh opens the browser when ready.
+#
+set -euo pipefail
+
+EXEC_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_DIR="$(cd "$EXEC_DIR/../../.." && pwd)"
+
+if [ ! -f "$PROJECT_DIR/run.sh" ]; then
+    osascript -e "display alert \"PollFiller\" message \"Could not find run.sh next to PollFiller.app. Keep the app inside the PollFiller project folder.\""
+    exit 1
+fi
+
+# Run the launcher in a visible Terminal window so logs show and Ctrl-C / closing
+# the window stops the server. `bash run.sh` avoids depending on the executable bit.
+osascript <<APPLESCRIPT
+tell application "Terminal"
+    activate
+    do script "cd '$PROJECT_DIR' && bash run.sh"
+end tell
+APPLESCRIPT
