@@ -108,7 +108,8 @@ def create_app() -> Flask:
 
 def main() -> None:
     host = os.environ.get("HOST", "127.0.0.1")
-    port = int(os.environ.get("PORT", "5000"))
+    # Default 8765 avoids macOS's AirPlay Receiver, which listens on port 5000.
+    port = int(os.environ.get("PORT", "8765"))
     create_app().run(host=host, port=port, debug=False)
 
 

@@ -8,8 +8,12 @@
 # platform-specific binaries between machines.
 #
 # Usage:
-#   ./run.sh            # first run sets up, then starts the server
+#   ./run.sh            # first run sets up, then starts the server (foreground)
 #   ./run.sh setup      # (re)install dependencies, e.g. after a git pull
+#
+# When launched by PollFiller.app (POLLFILLER_APP_MODE=1) it instead starts the
+# server detached in the background, opens the browser, and returns — so the
+# launching Terminal window can close without stopping the server.
 #
 set -euo pipefail
 
@@ -18,6 +22,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Local venv, kept off Google Drive. Override with POLLFILLER_VENV if you like.
 VENV="${POLLFILLER_VENV:-$HOME/.venvs/pollfiller}"
+
+URL="http://127.0.0.1:8765/"
+STATE_DIR="$HOME/.pollfiller"
+PIDFILE="$STATE_DIR/server.pid"
+LOGFILE="$STATE_DIR/server.log"
 
 PY="$(command -v python3 || true)"
 if [ -z "$PY" ]; then
@@ -42,20 +51,87 @@ fi
 
 # Don't scatter __pycache__/*.pyc into the Drive folder.
 export PYTHONDONTWRITEBYTECODE=1
+cd "$SCRIPT_DIR"
 
-# On macOS, open the browser once the server is up (set POLLFILLER_NO_BROWSER=1 to skip).
-if command -v open >/dev/null 2>&1 && [ "${POLLFILLER_NO_BROWSER:-}" != "1" ]; then
+# Open a URL in a NEW browser window (rather than reusing an existing tab).
+# Honors $POLLFILLER_BROWSER if set; otherwise prefers a Chromium-family browser,
+# then Safari, then the system default.
+open_url_new_window() {
+  local url="$1"
+  command -v open >/dev/null 2>&1 || return 0
+  if [ -n "${POLLFILLER_BROWSER:-}" ]; then
+    open -na "$POLLFILLER_BROWSER" --args --new-window "$url" 2>/dev/null && return 0
+  fi
+  local b
+  for b in "Google Chrome" "Brave Browser" "Microsoft Edge" "Arc" "Chromium"; do
+    if open -Ra "$b" >/dev/null 2>&1; then
+      open -na "$b" --args --new-window "$url" 2>/dev/null && return 0
+    fi
+  done
+  if open -Ra "Safari" >/dev/null 2>&1; then
+    osascript >/dev/null 2>&1 <<OSA && return 0
+tell application "Safari"
+  activate
+  make new document with properties {URL:"$url"}
+end tell
+OSA
+  fi
+  open "$url"
+}
+
+# Open the browser once the server responds (set POLLFILLER_NO_BROWSER=1 to skip).
+open_browser_when_ready() {
+  command -v open >/dev/null 2>&1 || return 0
+  [ "${POLLFILLER_NO_BROWSER:-}" = "1" ] && return 0
   (
     for _ in $(seq 1 90); do
-      if curl -fsS -o /dev/null "http://127.0.0.1:5000/" 2>/dev/null; then
-        open "http://127.0.0.1:5000/"
+      if curl -fsS -o /dev/null "$URL" 2>/dev/null; then
+        open_url_new_window "$URL"
         break
       fi
       sleep 1
     done
   ) &
+}
+
+# Close the Terminal window this script is running in (used in app mode so the
+# window disappears once the detached server is up). No-op outside a TTY.
+close_own_terminal_window() {
+  [ -t 1 ] || return 0
+  local mytty
+  mytty="$(tty 2>/dev/null || true)"
+  [ -n "$mytty" ] || return 0
+  (
+    sleep 1
+    osascript >/dev/null 2>&1 <<OSA || true
+tell application "Terminal"
+  repeat with w in windows
+    repeat with t in tabs of w
+      if tty of t is "$mytty" then close w
+    end repeat
+  end repeat
+end tell
+OSA
+  ) &
+}
+
+if [ "${POLLFILLER_APP_MODE:-}" = "1" ]; then
+  # Background mode: detach the server so the Terminal can close, then exit.
+  mkdir -p "$STATE_DIR"
+  nohup "$VENV/bin/python" -m zeeg_poll_agent.webapp >"$LOGFILE" 2>&1 &
+  echo $! >"$PIDFILE"
+  disown 2>/dev/null || true
+  for _ in $(seq 1 90); do
+    curl -fsS -o /dev/null "$URL" 2>/dev/null && break
+    sleep 1
+  done
+  open_browser_when_ready
+  echo "PollFiller is running in the background. This window will close."
+  close_own_terminal_window
+  exit 0
 fi
 
-cd "$SCRIPT_DIR"
-echo "Starting Zeeg poll-filler at http://127.0.0.1:5000  (Ctrl-C to stop)"
+# Foreground mode: visible logs, Ctrl-C to stop.
+open_browser_when_ready
+echo "Starting Zeeg poll-filler at $URL  (Ctrl-C to stop)"
 exec "$VENV/bin/python" -m zeeg_poll_agent.webapp

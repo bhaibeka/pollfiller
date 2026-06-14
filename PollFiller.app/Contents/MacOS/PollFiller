@@ -1,28 +1,54 @@
 #!/bin/bash
 #
-# PollFiller.app launcher.
+# PollFiller.app launcher — a start/stop toggle.
 #
-# This bundle lives at the root of the PollFiller project folder, so the
-# project directory is three levels up from this executable
-# (.app/Contents/MacOS/PollFiller). We open a Terminal window running the
-# project's run.sh, which builds the local environment on first launch (off
-# Google Drive) and starts the web server. run.sh opens the browser when ready.
+# This bundle lives at the root of the PollFiller project folder, so the project
+# directory is three levels up from this executable.
+#
+#   * Not running  -> start the server in the background and open the browser.
+#                     (First run on a machine shows a Terminal for the one-time
+#                      setup, which closes itself when ready. Later runs are
+#                      silent — no Terminal window at all.)
+#   * Running      -> stop the server. A notification confirms it.
 #
 set -euo pipefail
 
 EXEC_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$EXEC_DIR/../../.." && pwd)"
+VENV="${POLLFILLER_VENV:-$HOME/.venvs/pollfiller}"
+PIDFILE="$HOME/.pollfiller/server.pid"
+
+notify() {
+  osascript -e "display notification \"$1\" with title \"PollFiller\"" >/dev/null 2>&1 || true
+}
 
 if [ ! -f "$PROJECT_DIR/run.sh" ]; then
-    osascript -e "display alert \"PollFiller\" message \"Could not find run.sh next to PollFiller.app. Keep the app inside the PollFiller project folder.\""
-    exit 1
+  osascript -e 'display alert "PollFiller" message "Could not find run.sh next to PollFiller.app. Keep the app inside the PollFiller project folder."' >/dev/null 2>&1 || true
+  exit 1
 fi
 
-# Run the launcher in a visible Terminal window so logs show and Ctrl-C / closing
-# the window stops the server. `bash run.sh` avoids depending on the executable bit.
-osascript <<APPLESCRIPT
+# Toggle off: if our server is running, stop it.
+if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
+  kill "$(cat "$PIDFILE")" 2>/dev/null || true
+  rm -f "$PIDFILE"
+  pkill -f "zeeg_poll_agent.webapp" 2>/dev/null || true
+  notify "Stopped. Double-click to start again."
+  exit 0
+fi
+
+if [ -x "$VENV/bin/python" ]; then
+  # Already set up: start silently in the background, no Terminal window.
+  notify "Starting… the browser will open shortly."
+  nohup env POLLFILLER_APP_MODE=1 bash "$PROJECT_DIR/run.sh" >/dev/null 2>&1 &
+  exit 0
+fi
+
+# First run on this machine: show a Terminal so the one-time setup is visible.
+# run.sh (app mode) starts the detached server, opens the browser, then closes
+# this window automatically.
+osascript >/dev/null 2>&1 <<OSA || true
 tell application "Terminal"
-    activate
-    do script "cd '$PROJECT_DIR' && bash run.sh"
+  activate
+  do script "cd '$PROJECT_DIR' && POLLFILLER_APP_MODE=1 bash run.sh"
 end tell
-APPLESCRIPT
+OSA
