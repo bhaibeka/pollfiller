@@ -21,6 +21,7 @@ class PollAgent:
             token=config.zeeg_token,
             base_url=config.zeeg_base_url,
             timeout_s=config.request_timeout_s,
+            availability_timeout_s=config.availability_timeout_s,
         )
         load_builtin_adapters()
 

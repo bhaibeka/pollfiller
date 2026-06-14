@@ -34,9 +34,16 @@ class ZeegError(RuntimeError):
 
 
 class ZeegClient:
-    def __init__(self, token: str, base_url: str, timeout_s: float = 30.0) -> None:
+    def __init__(
+        self,
+        token: str,
+        base_url: str,
+        timeout_s: float = 30.0,
+        availability_timeout_s: float | None = None,
+    ) -> None:
         self._base = base_url.rstrip("/")
         self._timeout = timeout_s
+        self._availability_timeout = availability_timeout_s or timeout_s
         self._session = requests.Session()
         self._session.headers.update(
             {
@@ -46,9 +53,28 @@ class ZeegClient:
         )
 
     # -- low level ---------------------------------------------------------
-    def _get(self, path: str, params: Optional[dict] = None) -> dict:
+    def _get(
+        self,
+        path: str,
+        params: Optional[dict] = None,
+        timeout: Optional[float] = None,
+        retries: int = 1,
+    ) -> dict:
         url = path if path.startswith("http") else f"{self._base}/{path.lstrip('/')}"
-        resp = self._session.get(url, params=params, timeout=self._timeout)
+        timeout = timeout or self._timeout
+        last_exc: Optional[Exception] = None
+        for attempt in range(retries + 1):
+            try:
+                resp = self._session.get(url, params=params, timeout=timeout)
+                break
+            except requests.exceptions.Timeout as e:  # slow endpoints are flaky
+                last_exc = e
+        else:
+            raise ZeegError(
+                f"Zeeg request to {url} timed out after {retries + 1} attempt(s) "
+                f"({timeout:.0f}s each). The availability service may be busy; "
+                "try again."
+            ) from last_exc
         if resp.status_code == 401:
             raise ZeegError(
                 "Zeeg rejected the token (401). Check the token in the `zeeg_api` "
@@ -158,6 +184,7 @@ class ZeegClient:
         data = self._get(
             f"/availability/{owner_slug}/event-types/{event_type_slug}",
             params=params,
+            timeout=self._availability_timeout,
         )
         out: dict[str, set[str]] = {}
         for day in data.get("availability", []):

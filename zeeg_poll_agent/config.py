@@ -37,6 +37,9 @@ class Config:
     # How far before the earliest poll slot we look for already-running events.
     busy_lookback_hours: int = 24
     request_timeout_s: float = 30.0
+    # The availability endpoint computes the calendar grid live and is much
+    # slower (~15s, highly variable), so it gets its own generous timeout.
+    availability_timeout_s: float = 90.0
 
     @classmethod
     def from_env(cls) -> "Config":
