@@ -74,6 +74,49 @@ class TestPartition(unittest.TestCase):
         self.assertEqual(sorted(s.start.hour for s in conf), [9, 13])
 
 
+class TestUrlUnwrapping(unittest.TestCase):
+    def test_clean_url_unchanged(self):
+        from zeeg_poll_agent.urls import unwrap_url
+
+        u = "https://www.when2meet.com/?37027874-eWSHc"
+        self.assertEqual(unwrap_url(u), u)
+
+    def test_safelinks_unwrap(self):
+        from zeeg_poll_agent.urls import unwrap_url
+
+        wrapped = (
+            "https://can01.safelinks.protection.outlook.com/?url="
+            "https%3A%2F%2Fdoodle.com%2Fgroup-poll%2Fparticipate%2FdBX3jpoa"
+            "&data=05%7C02%7C&reserved=0"
+        )
+        self.assertEqual(
+            unwrap_url(wrapped),
+            "https://doodle.com/group-poll/participate/dBX3jpoa",
+        )
+
+    def test_nested_safelinks_then_urldefense_v3(self):
+        from zeeg_poll_agent.urls import unwrap_url
+
+        wrapped = (
+            "https://can01.safelinks.protection.outlook.com/?url="
+            "https%3A%2F%2Furldefense.com%2Fv3%2F__https%3A%2F%2Fwww.when2meet.com"
+            "%2F%3F37027874-eWSHc__%3B!!CjcC7IQ!I3feT747m7L43blxsKJiGLN-bYTOI5_M7QN"
+            "97ibiXekjDY9fJ2BTD9u1zf6ly_wWzzywcHJ8axGdgZiu5XM6XO8HfFxgcToRkw%24"
+            "&data=05%7C02%7C&reserved=0"
+        )
+        self.assertEqual(unwrap_url(wrapped), "https://www.when2meet.com/?37027874-eWSHc")
+
+    def test_urldefense_v3_with_replaced_chars(self):
+        from zeeg_poll_agent.urls import unwrap_url
+        import base64
+
+        # Target https://a.io/x : "://" is a 3-char run (**D), then "/" a single *.
+        # Replaced characters, in order, are ":" "/" "/" then "/" -> ":///".
+        b64 = base64.urlsafe_b64encode(b":///").decode().rstrip("=")
+        v3 = f"https://urldefense.com/v3/__https**Da.io*x__;{b64}!!sig$"
+        self.assertEqual(unwrap_url(v3), "https://a.io/x")
+
+
 class TestAdapterParsingOffline(unittest.TestCase):
     def test_doodle_option_parsing_iso(self):
         from zeeg_poll_agent.models import Identity
