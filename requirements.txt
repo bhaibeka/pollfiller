@@ -1,0 +1,6 @@
+requests>=2.31
+Flask>=3.0
+
+# Optional — only needed for the Calendly / Rally browser adapters:
+#   pip install playwright && playwright install chromium
+# playwright>=1.44

@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Poll Availability Finder</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #181b22; --panel-2: #1f232c; --line: #2a2f3a;
+    --text: #e8eaed; --muted: #9aa3b2; --accent: #5b8cff; --good: #3ddc97;
+    --bad: #ff6b6b; --radius: 14px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  .wrap { max-width: 820px; margin: 0 auto; padding: 32px 20px 80px; }
+  header h1 { font-size: 22px; margin: 0 0 4px; }
+  header p { color: var(--muted); margin: 0 0 24px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px; }
+  label { display: block; font-size: 13px; color: var(--muted); margin: 14px 0 6px; }
+  input, select {
+    width: 100%; padding: 11px 12px; background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--line); border-radius: 10px; font-size: 14px;
+  }
+  input:focus, select:focus { outline: none; border-color: var(--accent); }
+  .row { display: flex; gap: 14px; flex-wrap: wrap; }
+  .row > div { flex: 1 1 200px; }
+  button.primary {
+    margin-top: 20px; width: 100%; padding: 13px; border: none; border-radius: 10px;
+    background: var(--accent); color: #fff; font-size: 15px; font-weight: 600; cursor: pointer;
+  }
+  button.primary:disabled { opacity: .55; cursor: default; }
+  .ghost { background: transparent; border: 1px solid var(--line); color: var(--text);
+    padding: 7px 12px; border-radius: 8px; font-size: 13px; cursor: pointer; }
+  #status { margin-top: 16px; min-height: 20px; color: var(--muted); font-size: 14px; }
+  .err { color: var(--bad); }
+  .results { margin-top: 22px; display: none; }
+  .poll-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 6px; }
+  .poll-head h2 { font-size: 18px; margin: 0; }
+  .badge { font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
+    background: var(--panel-2); border: 1px solid var(--line); padding: 3px 8px; border-radius: 999px; color: var(--muted); }
+  .summary { color: var(--muted); font-size: 13px; margin: 2px 0 16px; }
+  .day { margin-bottom: 14px; }
+  .day h3 { font-size: 13px; color: var(--muted); margin: 0 0 8px; font-weight: 600; }
+  .slot { display: inline-flex; align-items: center; gap: 6px; margin: 0 8px 8px 0;
+    padding: 8px 12px; border-radius: 10px; background: var(--panel-2); border: 1px solid var(--line); }
+  .slot.free { border-color: rgba(61,220,151,.4); }
+  .slot .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--good); }
+  details { margin-top: 18px; }
+  details summary { cursor: pointer; color: var(--muted); font-size: 14px; }
+  .slot.busy { border-color: rgba(255,107,107,.35); opacity: .8; }
+  .slot.busy .dot { background: var(--bad); }
+  .toolbar { display: flex; gap: 10px; margin: 6px 0 14px; }
+  footer { margin-top: 36px; color: var(--muted); font-size: 12px; line-height: 1.7; }
+  code { background: var(--panel-2); padding: 1px 5px; border-radius: 5px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Poll Availability Finder</h1>
+    <p>Paste a meeting-poll link. It lists the slots with no conflicts on your connected calendars, so you can fill the poll yourself.</p>
+  </header>
+
+  <div class="card">
+    <label for="url">Poll URL</label>
+    <input id="url" placeholder="https://doodle.com/poll/…  ·  when2meet  ·  calendly  ·  rally" />
+    <div class="row">
+      <div>
+        <label for="tz">Time zone</label>
+        <input id="tz" />
+      </div>
+      <div>
+        <label for="page">Availability source (Zeeg scheduling page)</label>
+        <select id="page"><option value="">Auto (your default page)</option></select>
+      </div>
+    </div>
+    <button class="primary" id="go">Find my free slots</button>
+    <button class="ghost" id="test" style="margin-top:10px;width:100%;padding:11px">Test poll only (detect &amp; count slots)</button>
+    <div id="status"></div>
+  </div>
+
+  <div class="results card" id="results">
+    <div class="poll-head">
+      <h2 id="pollTitle"></h2>
+      <span class="badge" id="pollService"></span>
+      <a id="pollLink" class="ghost" target="_blank" rel="noopener">Open poll ↗</a>
+    </div>
+    <div class="summary" id="summary"></div>
+    <div class="toolbar">
+      <button class="ghost" id="copyAll">Copy free times</button>
+    </div>
+    <div id="free"></div>
+    <details id="conflictWrap">
+      <summary></summary>
+      <div id="conflicting" style="margin-top:12px"></div>
+    </details>
+  </div>
+
+  <footer>
+    Free / busy comes from Zeeg’s availability for the chosen scheduling page, which already
+    accounts for every connected calendar (Google, Outlook, …). A slot is only marked free if Zeeg
+    offers a bookable start at exactly that time; off-grid poll times (e.g. 9:10 on a page that books
+    on the half-hour) are conservatively listed under conflicts — pick a finer-grained page to avoid this.
+    This tool only reads; it never submits on your behalf.
+  </footer>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const localTz = Intl.DateTimeFormat().resolvedOptions().timeZone || "America/Toronto";
+$("tz").value = localTz;
+
+function fmt(iso, tz) {
+  const d = new Date(iso);
+  return new Intl.DateTimeFormat([], { timeZone: tz, hour: "2-digit", minute: "2-digit" }).format(d);
+}
+function dayKey(iso, tz) {
+  const d = new Date(iso);
+  return new Intl.DateTimeFormat([], { timeZone: tz, weekday: "short", month: "short", day: "numeric" }).format(d);
+}
+
+async function loadPages() {
+  try {
+    const r = await fetch("/api/pages");
+    const j = await r.json();
+    if (j.pages) {
+      for (const p of j.pages) {
+        const o = document.createElement("option");
+        o.value = JSON.stringify({ ownerSlug: p.ownerSlug, eventTypeSlug: p.eventTypeSlug });
+        o.textContent = p.label + (p.isDefault ? " — default" : "");
+        $("page").appendChild(o);
+      }
+    }
+  } catch (e) { /* non-fatal */ }
+}
+loadPages();
+
+let lastFree = [];
+$("go").addEventListener("click", analyze);
+$("test").addEventListener("click", testPoll);
+$("url").addEventListener("keydown", (e) => { if (e.key === "Enter") analyze(); });
+
+async function testPoll() {
+  const url = $("url").value.trim();
+  if (!url) { $("status").innerHTML = '<span class="err">Enter a poll URL.</span>'; return; }
+  $("status").textContent = "Probing poll…";
+  try {
+    const r = await fetch("/api/diagnose", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url }),
+    });
+    const j = await r.json();
+    if (j.ok) {
+      $("status").innerHTML =
+        `Detected <b>${j.service}</b> · read <b>${j.slot_count}</b> slot(s) from “${j.title || "poll"}”.`;
+    } else {
+      $("status").innerHTML = `<span class="err">${j.service || "?"}: ${j.error || "could not read poll"}</span>`;
+    }
+  } catch (e) {
+    $("status").innerHTML = '<span class="err">' + e.message + "</span>";
+  }
+}
+
+async function analyze() {
+  const url = $("url").value.trim();
+  const tz = $("tz").value.trim() || localTz;
+  if (!url) { $("status").innerHTML = '<span class="err">Enter a poll URL.</span>'; return; }
+  let pageSel = {};
+  try { pageSel = $("page").value ? JSON.parse($("page").value) : {}; } catch {}
+
+  $("go").disabled = true;
+  $("status").textContent = "Reading poll and checking your calendars…";
+  $("results").style.display = "none";
+
+  try {
+    const r = await fetch("/api/analyze", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url, timezone: tz, ...pageSel }),
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || "Request failed");
+    render(j, tz);
+    $("status").textContent = "";
+  } catch (e) {
+    $("status").innerHTML = '<span class="err">' + e.message + "</span>";
+  } finally {
+    $("go").disabled = false;
+  }
+}
+
+function render(j, tz) {
+  $("pollTitle").textContent = j.poll.title || "Poll";
+  $("pollService").textContent = j.poll.service;
+  $("pollLink").href = j.poll.url;
+  $("summary").textContent =
+    `${j.free.length} free · ${j.conflicting.length} conflicting · times shown in ${tz}`;
+
+  // Group free slots by day.
+  const groups = {};
+  for (const s of j.free) (groups[dayKey(s.startUtc, tz)] ||= []).push(s);
+  const freeEl = $("free"); freeEl.innerHTML = "";
+  if (j.free.length === 0) {
+    freeEl.innerHTML = '<p class="summary">No conflict-free slots in this poll.</p>';
+  }
+  for (const [day, slots] of Object.entries(groups)) {
+    const wrap = document.createElement("div"); wrap.className = "day";
+    const h = document.createElement("h3"); h.textContent = day; wrap.appendChild(h);
+    for (const s of slots) {
+      const el = document.createElement("span"); el.className = "slot free";
+      el.innerHTML = '<span class="dot"></span>' + fmt(s.startUtc, tz) + " – " + fmt(s.endUtc, tz);
+      wrap.appendChild(el);
+    }
+    freeEl.appendChild(wrap);
+  }
+
+  lastFree = j.free.map((s) => `${dayKey(s.startUtc, tz)} ${fmt(s.startUtc, tz)}–${fmt(s.endUtc, tz)}`);
+
+  // Conflicting (collapsed).
+  $("conflictWrap").style.display = j.conflicting.length ? "block" : "none";
+  $("conflictWrap").querySelector("summary").textContent =
+    `Show ${j.conflicting.length} conflicting slot(s)`;
+  const cEl = $("conflicting"); cEl.innerHTML = "";
+  for (const s of j.conflicting) {
+    const el = document.createElement("span"); el.className = "slot busy";
+    el.innerHTML = '<span class="dot"></span>' + dayKey(s.startUtc, tz) + " " +
+      fmt(s.startUtc, tz) + " – " + fmt(s.endUtc, tz);
+    cEl.appendChild(el);
+  }
+
+  $("results").style.display = "block";
+}
+
+$("copyAll").addEventListener("click", () => {
+  if (!lastFree.length) return;
+  navigator.clipboard.writeText(lastFree.join("\n"));
+  $("copyAll").textContent = "Copied ✓";
+  setTimeout(() => ($("copyAll").textContent = "Copy free times"), 1500);
+});
+</script>
+</body>
+</html>
