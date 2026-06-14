@@ -117,14 +117,25 @@ OSA
 
 if [ "${POLLFILLER_APP_MODE:-}" = "1" ]; then
   # Background mode: detach the server so the Terminal can close, then exit.
+  # POLLFILLER_PIDFILE lets the server remove its own pidfile when it
+  # self-shuts-down (e.g. after the browser window is closed).
   mkdir -p "$STATE_DIR"
-  nohup "$VENV/bin/python" -m zeeg_poll_agent.webapp >"$LOGFILE" 2>&1 &
-  echo $! >"$PIDFILE"
+  POLLFILLER_PIDFILE="$PIDFILE" nohup "$VENV/bin/python" -m zeeg_poll_agent.webapp >"$LOGFILE" 2>&1 &
+  srv_pid=$!
+  echo "$srv_pid" >"$PIDFILE"
   disown 2>/dev/null || true
+  up=0
   for _ in $(seq 1 90); do
-    curl -fsS -o /dev/null "$URL" 2>/dev/null && break
+    if curl -fsS -o /dev/null "$URL" 2>/dev/null; then up=1; break; fi
+    kill -0 "$srv_pid" 2>/dev/null || break  # process died (e.g. port already in use)
     sleep 1
   done
+  if [ "$up" != "1" ]; then
+    echo "ERROR: server failed to start (see $LOGFILE). $URL may already be in use." >&2
+    kill "$srv_pid" 2>/dev/null || true
+    rm -f "$PIDFILE"
+    exit 1
+  fi
   open_browser_when_ready
   echo "PollFiller is running in the background. This window will close."
   close_own_terminal_window

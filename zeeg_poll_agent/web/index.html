@@ -240,6 +240,17 @@ $("copyAll").addEventListener("click", () => {
   $("copyAll").textContent = "Copied ✓";
   setTimeout(() => ($("copyAll").textContent = "Copy free times"), 1500);
 });
+
+// Keep-alive heartbeat: the local server shuts itself down shortly after this
+// page stops pinging (i.e. when you close the window). Reloads and extra tabs
+// are handled by the server (a fresh ping cancels a pending shutdown).
+function heartbeat() {
+  fetch("/api/heartbeat", { method: "POST", keepalive: true }).catch(() => {});
+}
+heartbeat();
+setInterval(heartbeat, 5000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) heartbeat(); });
+window.addEventListener("pagehide", () => { navigator.sendBeacon("/api/closing"); });
 </script>
 </body>
 </html>
